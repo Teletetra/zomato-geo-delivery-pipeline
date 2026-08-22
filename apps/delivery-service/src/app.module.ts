@@ -6,6 +6,7 @@ import { DeliveryEventsPublisher } from './application/ports/delivery-events.por
 import { InMemoryDeliveryRepository } from './infrastructure/persistence/in-memory-delivery.repository';
 import { InMemoryDriverRepository } from './infrastructure/persistence/in-memory-driver.repository';
 import { KafkaDeliveryEventsPublisher } from './infrastructure/events/kafka-delivery.events.publisher';
+import { OrderPaymentConsumer } from './infrastructure/messaging/order-payment.consumer';
 import { DeliveryController } from './interfaces/http/controllers/delivery.controller';
 import { DriverController } from './interfaces/http/controllers/driver.controller';
 import { KafkaPublisher } from '../../../libs/kafka/src/kafka.publisher';
@@ -15,6 +16,7 @@ import { KafkaPublisher } from '../../../libs/kafka/src/kafka.publisher';
   providers: [
     GeoDispatchService,
     KafkaPublisher,
+    OrderPaymentConsumer,
     InMemoryDeliveryRepository,
     InMemoryDriverRepository,
     KafkaDeliveryEventsPublisher,
