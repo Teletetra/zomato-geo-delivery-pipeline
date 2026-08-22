@@ -1,6 +1,7 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { DeliveryAggregate } from '../../domain/entities/delivery.aggregate';
 import { DeliveryRepository, IDeliveryRepository } from '../../domain/repositories/delivery.repository';
+import { DriverRepository, IDriverRepository } from '../../domain/repositories/driver.repository';
 import { GeoPoint } from '../../domain/value-objects/geo-point.vo';
 import { DeliveryEventsPublisher, IDeliveryEventsPublisher } from '../ports/delivery-events.port';
 
@@ -8,6 +9,7 @@ import { DeliveryEventsPublisher, IDeliveryEventsPublisher } from '../ports/deli
 export class GeoDispatchService {
   constructor(
     @Inject(DeliveryRepository) private readonly deliveries: IDeliveryRepository,
+    @Inject(DriverRepository) private readonly drivers: IDriverRepository,
     @Inject(DeliveryEventsPublisher) private readonly events: IDeliveryEventsPublisher,
   ) {}
 
@@ -40,7 +42,7 @@ export class GeoDispatchService {
     if (!delivery) throw new NotFoundException(`Delivery ${deliveryId} not found`);
 
     const origin = delivery.props.pickupLocation;
-    const partners = await this.deliveries.findNearbyPartners(origin, radiusKm);
+    const partners = await this.drivers.getNearby(origin, radiusKm);
     const candidates = partners
       .filter((partner) => partner.available)
       .map((partner) => ({
@@ -52,14 +54,15 @@ export class GeoDispatchService {
     const nearest = candidates[0];
     if (!nearest) return delivery;
 
-    delivery.assignPartner(nearest.id, new GeoPoint(nearest.latitude, nearest.longitude));
+    delivery.assignPartner(nearest.driverId, new GeoPoint(nearest.latitude, nearest.longitude));
     await this.deliveries.save(delivery);
+    await this.drivers.markAvailability(nearest.driverId, false);
 
     await this.events.publishAssigned({
       eventId: crypto.randomUUID(),
       occurredAt: new Date().toISOString(),
       orderId: delivery.props.orderId,
-      deliveryPartnerId: nearest.id,
+      deliveryPartnerId: nearest.driverId,
     });
 
     return delivery;
@@ -71,6 +74,12 @@ export class GeoDispatchService {
 
     delivery.transitionTo(status);
     await this.deliveries.save(delivery);
+
+    if (status === 'DELIVERED' || status === 'CANCELLED') {
+      const partnerId = delivery.props.deliveryPartnerId;
+      if (partnerId) await this.drivers.markAvailability(partnerId, true);
+    }
+
     await this.events.publishStatusChanged({
       eventId: crypto.randomUUID(),
       occurredAt: new Date().toISOString(),
