@@ -1,3 +1,8 @@
+export interface DeliveryLocation {
+  latitude: number;
+  longitude: number;
+}
+
 export interface OrderCreatedEvent {
   type: 'OrderCreated';
   eventId: string;
@@ -6,6 +11,8 @@ export interface OrderCreatedEvent {
   customerId: string;
   restaurantId: string;
   total: number;
+  pickup?: DeliveryLocation;
+  drop?: DeliveryLocation;
 }
 
 export interface OrderConfirmedEvent {
