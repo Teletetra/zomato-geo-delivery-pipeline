@@ -8,7 +8,8 @@
     "build": "tsc -p tsconfig.lib.json"
   },
   "dependencies": {
-    "@nestjs/common": "^11.0.11"
+    "@nestjs/common": "^11.0.11",
+    "kafkajs": "^2.2.4"
   },
   "devDependencies": {
     "typescript": "^5.7.3",
