@@ -1,0 +1,2 @@
+import { Injectable } from '@nestjs/common'; import { KafkaPublisher } from '@kafka/kafka.publisher'; import { IRestaurantEventPublisher } from '../../application/ports/event-publisher.port';
+@Injectable() export class RestaurantEventPublisher implements IRestaurantEventPublisher { constructor(private readonly kafka:KafkaPublisher){} publish(topic:string,payload:unknown,key?:string){return this.kafka.publish(topic,{...((payload&&typeof payload==='object')?payload:{}),aggregateId:key});} }

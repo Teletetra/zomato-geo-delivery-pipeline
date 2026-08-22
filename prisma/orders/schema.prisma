@@ -1,0 +1,5 @@
+datasource db { provider = "postgresql"; url = env("ORDER_DATABASE_URL") }
+generator client { provider = "prisma-client-js" }
+model Order { id String @id @default(uuid()); customerId String; restaurantId String; status String; total Decimal @db.Decimal(10,2); createdAt DateTime @default(now()); updatedAt DateTime @updatedAt }
+model OrderItem { id String @id @default(uuid()); orderId String; menuItemId String; quantity Int; unitPrice Decimal @db.Decimal(10,2) }
+model StoredEvent { id String @id @default(uuid()); aggregateId String; aggregateType String; eventType String; version Int; payload Json; occurredAt DateTime @default(now()); @@unique([aggregateId, version]) }
