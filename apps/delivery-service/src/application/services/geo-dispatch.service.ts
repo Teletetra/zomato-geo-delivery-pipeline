@@ -40,10 +40,10 @@ export class GeoDispatchService {
   async findAndAssignNearestPartner(deliveryId: string, radiusKm = 5): Promise<DeliveryAggregate> {
     const delivery = await this.deliveries.findById(deliveryId);
     if (!delivery) throw new NotFoundException(`Delivery ${deliveryId} not found`);
+    if (delivery.props.deliveryPartnerId) return delivery;
 
     const origin = delivery.props.pickupLocation;
-    const partners = await this.drivers.getNearby(origin, radiusKm);
-    const candidates = partners
+    const candidates = (await this.drivers.getNearby(origin, radiusKm))
       .filter((partner) => partner.available)
       .map((partner) => ({
         ...partner,
@@ -51,19 +51,26 @@ export class GeoDispatchService {
       }))
       .sort((a, b) => a.distanceKm - b.distanceKm);
 
-    const nearest = candidates[0];
-    if (!nearest) return delivery;
+    for (const candidate of candidates) {
+      const leaseId = `${delivery.id}:${candidate.driverId}:${crypto.randomUUID()}`;
+      const claimed = await this.drivers.claimDriver(candidate.driverId, leaseId, 30_000);
+      if (!claimed) continue;
 
-    delivery.assignPartner(nearest.driverId, new GeoPoint(nearest.latitude, nearest.longitude));
-    await this.deliveries.save(delivery);
-    await this.drivers.markAvailability(nearest.driverId, false);
-
-    await this.events.publishAssigned({
-      eventId: crypto.randomUUID(),
-      occurredAt: new Date().toISOString(),
-      orderId: delivery.props.orderId,
-      deliveryPartnerId: nearest.driverId,
-    });
+      try {
+        delivery.assignPartner(candidate.driverId, new GeoPoint(candidate.latitude, candidate.longitude));
+        await this.deliveries.save(delivery);
+        await this.events.publishAssigned({
+          eventId: crypto.randomUUID(),
+          occurredAt: new Date().toISOString(),
+          orderId: delivery.props.orderId,
+          deliveryPartnerId: candidate.driverId,
+        });
+        return delivery;
+      } catch (error) {
+        await this.drivers.releaseDriver(candidate.driverId, leaseId);
+        throw error;
+      }
+    }
 
     return delivery;
   }
