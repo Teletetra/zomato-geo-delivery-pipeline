@@ -5,21 +5,31 @@ import { DriverLocation, IDriverRepository } from '../../domain/repositories/dri
 const GEO_KEY = 'zomato:drivers:geo';
 const META_KEY = (driverId: string) => `zomato:driver:${driverId}`;
 const LEASE_KEY = (driverId: string) => `zomato:driver:lease:${driverId}`;
+const CLAIM_FIELD = 'claimLeaseId';
 
 const CLAIM_SCRIPT = `
 local available = redis.call('HGET', KEYS[1], 'available')
 if available ~= '1' then return 0 end
 if redis.call('SET', KEYS[2], ARGV[1], 'NX', 'PX', ARGV[2]) then
-  redis.call('HSET', KEYS[1], 'available', '0', 'lastUpdatedAt', ARGV[3])
+  redis.call('HSET', KEYS[1], 'available', '0', 'claimLeaseId', ARGV[1], 'lastUpdatedAt', ARGV[3])
   return 1
 end
 return 0
 `;
 
+const FINALIZE_SCRIPT = `
+if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 0 end
+redis.call('DEL', KEYS[1])
+redis.call('HDEL', KEYS[2], ARGV[2])
+redis.call('HSET', KEYS[2], 'available', '0', 'lastUpdatedAt', ARGV[3])
+return 1
+`;
+
 const RELEASE_SCRIPT = `
 if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 0 end
 redis.call('DEL', KEYS[1])
-redis.call('HSET', KEYS[2], 'available', '1', 'lastUpdatedAt', ARGV[2])
+redis.call('HDEL', KEYS[2], ARGV[2])
+redis.call('HSET', KEYS[2], 'available', '1', 'lastUpdatedAt', ARGV[3])
 return 1
 `;
 
@@ -49,10 +59,19 @@ export class RedisGeoDriverRepository implements IDriverRepository, OnModuleInit
     const ids = await this.redis.georadius(GEO_KEY, location.longitude, location.latitude, radiusKm, 'km');
     const results: DriverLocation[] = [];
     for (const id of ids) {
-      const meta = await this.redis.hgetall(META_KEY(String(id)));
+      const driverId = String(id);
+      const metaKey = META_KEY(driverId);
+      const meta = await this.redis.hgetall(metaKey);
       if (!meta.latitude) continue;
+
+      if (meta.available === '0' && meta[CLAIM_FIELD] && !(await this.redis.exists(LEASE_KEY(driverId)))) {
+        await this.redis.hset(metaKey, 'available', '1', 'lastUpdatedAt', new Date().toISOString());
+        await this.redis.hdel(metaKey, CLAIM_FIELD);
+        meta.available = '1';
+      }
+
       results.push({
-        driverId: String(id),
+        driverId,
         latitude: Number(meta.latitude),
         longitude: Number(meta.longitude),
         available: meta.available === '1',
@@ -75,9 +94,23 @@ export class RedisGeoDriverRepository implements IDriverRepository, OnModuleInit
     return Number(result) === 1;
   }
 
+  async finalizeDriverClaim(driverId: string, leaseId: string): Promise<boolean> {
+    const result = await this.redis.eval(
+      FINALIZE_SCRIPT,
+      2,
+      LEASE_KEY(driverId),
+      META_KEY(driverId),
+      leaseId,
+      CLAIM_FIELD,
+      new Date().toISOString(),
+    );
+    return Number(result) === 1;
+  }
+
   async markAvailability(driverId: string, available: boolean): Promise<void> {
     if (available) {
       await this.redis.del(LEASE_KEY(driverId));
+      await this.redis.hdel(META_KEY(driverId), CLAIM_FIELD);
     }
     await this.redis.hset(META_KEY(driverId), 'available', available ? '1' : '0', 'lastUpdatedAt', new Date().toISOString());
   }
@@ -89,6 +122,7 @@ export class RedisGeoDriverRepository implements IDriverRepository, OnModuleInit
       LEASE_KEY(driverId),
       META_KEY(driverId),
       leaseId,
+      CLAIM_FIELD,
       new Date().toISOString(),
     );
     return Number(result) === 1;
