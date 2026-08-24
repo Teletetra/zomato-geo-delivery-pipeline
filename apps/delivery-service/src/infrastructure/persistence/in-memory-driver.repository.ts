@@ -5,6 +5,7 @@ import { DriverLocation, IDriverRepository } from '../../domain/repositories/dri
 @Injectable()
 export class InMemoryDriverRepository implements IDriverRepository {
   private readonly drivers = new Map<string, DriverLocation>();
+  private readonly leases = new Map<string, string>();
 
   constructor() {
     for (const driver of [
@@ -28,9 +29,31 @@ export class InMemoryDriverRepository implements IDriverRepository {
     });
   }
 
+  async claimDriver(driverId: string, leaseId: string): Promise<boolean> {
+    const current = this.drivers.get(driverId);
+    if (!current || !current.available || this.leases.has(driverId)) return false;
+    this.leases.set(driverId, leaseId);
+    this.drivers.set(driverId, { ...current, available: false, lastUpdatedAt: new Date().toISOString() });
+    return true;
+  }
+
+  async finalizeDriverClaim(driverId: string, leaseId: string): Promise<boolean> {
+    if (this.leases.get(driverId) !== leaseId) return false;
+    this.leases.delete(driverId);
+    return true;
+  }
+
   async markAvailability(driverId: string, available: boolean): Promise<void> {
     const current = this.drivers.get(driverId);
     if (!current) return;
+    if (available) this.leases.delete(driverId);
     this.drivers.set(driverId, { ...current, available, lastUpdatedAt: new Date().toISOString() });
+  }
+
+  async releaseDriver(driverId: string, leaseId: string): Promise<boolean> {
+    if (this.leases.get(driverId) !== leaseId) return false;
+    this.leases.delete(driverId);
+    await this.markAvailability(driverId, true);
+    return true;
   }
 }
