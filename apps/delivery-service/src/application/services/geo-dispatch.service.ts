@@ -59,6 +59,11 @@ export class GeoDispatchService {
       try {
         delivery.assignPartner(candidate.driverId, new GeoPoint(candidate.latitude, candidate.longitude));
         await this.deliveries.save(delivery);
+        const finalized = await this.drivers.finalizeDriverClaim(candidate.driverId, leaseId);
+        if (!finalized) {
+          throw new Error(`Driver claim lease expired for ${candidate.driverId}`);
+        }
+
         await this.events.publishAssigned({
           eventId: crypto.randomUUID(),
           occurredAt: new Date().toISOString(),
