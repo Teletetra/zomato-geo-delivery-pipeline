@@ -37,6 +37,12 @@ export class InMemoryDriverRepository implements IDriverRepository {
     return true;
   }
 
+  async finalizeDriverClaim(driverId: string, leaseId: string): Promise<boolean> {
+    if (this.leases.get(driverId) !== leaseId) return false;
+    this.leases.delete(driverId);
+    return true;
+  }
+
   async markAvailability(driverId: string, available: boolean): Promise<void> {
     const current = this.drivers.get(driverId);
     if (!current) return;
