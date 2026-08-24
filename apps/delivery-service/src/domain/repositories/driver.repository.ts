@@ -13,5 +13,6 @@ export interface IDriverRepository {
   getNearby(location: { latitude: number; longitude: number }, radiusKm: number): Promise<DriverLocation[]>;
   markAvailability(driverId: string, available: boolean): Promise<void>;
   claimDriver(driverId: string, leaseId: string, leaseMs?: number): Promise<boolean>;
+  finalizeDriverClaim(driverId: string, leaseId: string): Promise<boolean>;
   releaseDriver(driverId: string, leaseId: string): Promise<boolean>;
 }
